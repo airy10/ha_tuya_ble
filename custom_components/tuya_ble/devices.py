@@ -501,6 +501,23 @@ devices_database: dict[str, TuyaBLECategoryInfo] = {
 		),
 
     ),
+    "dj": TuyaBLECategoryInfo(
+        products={
+            **dict.fromkeys(
+            [
+              "czryehvg",
+            ],  # device product_id
+            TuyaBLEProductInfo(
+                name="6 inch RGBCW Recessed Light",
+                manufacturer="POWERASIA",
+        ),
+            ),
+        },
+        info = TuyaBLEProductInfo(
+                name="QC1089_P23_TYBR_CEILING5",
+        ),
+
+    ),
 }
 
 def get_product_info_by_ids(
