@@ -148,7 +148,7 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
     "ms": TuyaBLECategorySensorMapping(
         products={
             **dict.fromkeys(
-                ["ludzroix", "isk2p555"], # Smart Lock
+                ["ludzroix", "isk2p555", "0qxp5u7s"], # Smart Lock
                 [
                     TuyaBLESensorMapping(
                         dp_id=21,
@@ -163,6 +163,13 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         ),
                     ),
                     TuyaBLEBatteryMapping(dp_id=8),
+                    TuyaBLESensorMapping(
+                        dp_id=12, # Retrieve last fingerprint used
+                        description=SensorEntityDescription(
+                            key="unlock_fingerprint",
+                            icon="mdi:fingerprint",
+                        ),
+                    ),
                 ],
             ),
         }
