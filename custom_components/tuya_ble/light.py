@@ -99,7 +99,7 @@ class TuyaLightEntityDescription(
     brightness: DPCode | tuple[DPCode, ...] | None = None
     color_data: DPCode | tuple[DPCode, ...] | None = None
     color_mode: DPCode | None = None
-    color_temp: DPCode | tuple[DPCode, ...] | None = None
+    color_temp_kelvin: DPCode | tuple[DPCode, ...] | None = None
     default_color_type: ColorTypeData = field(
         default_factory=lambda: DEFAULT_COLOR_TYPE_DATA
     ) 
@@ -162,7 +162,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
             color_data=DPCode.COLOUR_DATA,
         ),
     ),
@@ -174,7 +174,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
             color_data=DPCode.COLOUR_DATA,
             default_color_type=DEFAULT_COLOR_TYPE_DATA_V2,
         ),
@@ -187,7 +187,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=(DPCode.BRIGHT_VALUE_V2, DPCode.BRIGHT_VALUE),
-            color_temp=(DPCode.TEMP_VALUE_V2, DPCode.TEMP_VALUE),
+            color_temp_kelvin=(DPCode.TEMP_VALUE_V2, DPCode.TEMP_VALUE),
             color_data=(DPCode.COLOUR_DATA_V2, DPCode.COLOUR_DATA),
         ),
         # Not documented
@@ -206,7 +206,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
             color_data=DPCode.COLOUR_DATA,
         ),
         # Some ceiling fan lights use LIGHT for DPCode instead of SWITCH_LED
@@ -223,7 +223,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
             color_data=DPCode.COLOUR_DATA,
         ),
     ),
@@ -235,7 +235,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
             color_data=DPCode.COLOUR_DATA,
         ),
     ),
@@ -389,7 +389,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
             color_data=DPCode.COLOUR_DATA,
         ),
     ),
@@ -401,7 +401,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
             color_data=DPCode.COLOUR_DATA,
         ),
         TuyaLightEntityDescription(
@@ -417,7 +417,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_CONTROLLER,
-            color_temp=DPCode.TEMP_CONTROLLER,
+            color_temp_kelvin=DPCode.TEMP_CONTROLLER,
         ),
     ),
     # Fan
@@ -428,7 +428,7 @@ LIGHTS: dict[str, tuple[TuyaLightEntityDescription, ...]] = {
             name=None,
             color_mode=DPCode.WORK_MODE,
             brightness=DPCode.BRIGHT_VALUE,
-            color_temp=DPCode.TEMP_VALUE,
+            color_temp_kelvin=DPCode.TEMP_VALUE,
         ),
         TuyaLightEntityDescription(
             key=DPCode.SWITCH_LED,
@@ -461,7 +461,7 @@ def update_mapping(category_description: tuple[TuyaLightEntityDescription], mapp
                         "brightness_min", 
                         "color_data", 
                         "color_mode", 
-                        "color_temp", 
+                        "color_temp_kelvin", 
                     ]:
                 if v := getattr(desc, key):
                     setattr(cat_desc, key, v)
@@ -519,7 +519,7 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
     _color_data_dpcode: DPCode | None = None
     _color_data_type: ColorTypeData | None = None
     _color_mode_dpcode: DPCode | None = None
-    _color_temp: IntegerTypeData | None = None
+    _color_temp_kelvin: IntegerTypeData | None = None
 
     _attr_has_entity_name = True
     _attr_name = None
@@ -549,21 +549,9 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
         )
 
         if int_type := self.find_dpcode(
-            description.brightness, dptype=DPType.INTEGER, prefer_function=True
+            description.color_temp_kelvin, dptype=DPType.INTEGER, prefer_function=True
         ):
-            self._brightness = int_type
-            self._attr_supported_color_modes.add(ColorMode.BRIGHTNESS)
-            self._brightness_max = self.find_dpcode(
-                description.brightness_max, dptype=DPType.INTEGER
-            )
-            self._brightness_min = self.find_dpcode(
-                description.brightness_min, dptype=DPType.INTEGER
-            )
-
-        if int_type := self.find_dpcode(
-            description.color_temp, dptype=DPType.INTEGER, prefer_function=True
-        ):
-            self._color_temp = int_type
+            self._color_temp_kelvin = int_type
             self._attr_supported_color_modes.add(ColorMode.COLOR_TEMP)
 
         if (
@@ -596,6 +584,19 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
                     self._color_data_type = DEFAULT_COLOR_TYPE_DATA_V2
 
         if not self._attr_supported_color_modes:
+            if int_type := self.find_dpcode(
+                description.brightness, dptype=DPType.INTEGER, prefer_function=True
+            ):
+                self._brightness = int_type
+                self._attr_supported_color_modes.add(ColorMode.BRIGHTNESS)
+                self._brightness_max = self.find_dpcode(
+                    description.brightness_max, dptype=DPType.INTEGER
+                )
+                self._brightness_min = self.find_dpcode(
+                    description.brightness_min, dptype=DPType.INTEGER
+                )
+
+        if not self._attr_supported_color_modes:
             self._attr_supported_color_modes = {ColorMode.ONOFF}
 
     @callback
@@ -612,7 +613,7 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
         """Turn on or control the light."""
         commands = [{"code": self.entity_description.key, "value": True}]
 
-        if self._color_temp and ATTR_COLOR_TEMP_KELVIN in kwargs:
+        if self._color_temp_kelvin and ATTR_COLOR_TEMP_KELVIN in kwargs:
             if self._color_mode_dpcode:
                 commands += [
                     {
@@ -623,9 +624,9 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
 
             commands += [
                 {
-                    "code": self._color_temp.dpcode,
+                    "code": self._color_temp_kelvin.dpcode,
                     "value": round(
-                        self._color_temp.remap_value_from(
+                        self._color_temp_kelvin.remap_value_from(
                             kwargs[ATTR_COLOR_TEMP_KELVIN],
                             self.min_mireds,
                             self.max_mireds,
@@ -784,17 +785,17 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
         return round(brightness)
 
     @property
-    def color_temp(self) -> int | None:
-        """Return the color_temp of the light."""
-        if not self._color_temp:
+    def color_temp_kelvin(self) -> int | None:
+        """Return the color_temp_kelvin of the light."""
+        if not self._color_temp_kelvin:
             return None
 
-        temperature = self._device.status.get(self._color_temp.dpcode)
+        temperature = self._device.status.get(self._color_temp_kelvin.dpcode)
         if temperature is None:
             return None
 
         return round(
-            self._color_temp.remap_value_to(
+            self._color_temp_kelvin.remap_value_to(
                 temperature, self.min_mireds, self.max_mireds, reverse=True
             )
         )
@@ -818,7 +819,7 @@ class TuyaBLELight(TuyaBLEEntity, LightEntity):
             and self.device.status.get(self._color_mode_dpcode) != WorkMode.WHITE
         ):
             return ColorMode.HS
-        if self._color_temp:
+        if self._color_temp_kelvin:
             return ColorMode.COLOR_TEMP
         if self._brightness:
             return ColorMode.BRIGHTNESS
