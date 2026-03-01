@@ -345,6 +345,9 @@ devices_database: dict[str, TuyaBLECategoryInfo] = {
             "xicdxood": TuyaBLEProductInfo(  # device product_id
                 name="Raycube K7 Pro+",
             ),
+            "hc7n0urm": TuyaBLEProductInfo(
+                name="A1 Ultra-JM",
+            ),
         },
     ),
     "szjqr": TuyaBLECategoryInfo(
