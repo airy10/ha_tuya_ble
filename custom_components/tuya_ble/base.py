@@ -101,17 +101,17 @@ class IntegerTypeData:
     def from_dict(cls, dpcode: DPCode, data: dict | None) -> IntegerTypeData | None:
         """Load Dict and return a IntegerTypeData object."""
 
-        if not dict:
+        if not data:
             return None
 
         return cls(
             dpcode,
-            min=int(dict.get("min", 0)),
-            max=int(dict.get("max", 0)),
-            scale=float(dict.get("scale", 0)),
-            step=max(float(dict.get("step", 0)), 1),
-            unit=dict.get("unit"),
-            type=dict.get("type"),
+            min=int(data.get("min", 0)),
+            max=int(data.get("max", 0)),
+            scale=float(data.get("scale", 0)),
+            step=max(float(data.get("step", 0)), 1),
+            unit=data.get("unit"),
+            type=data.get("type"),
         )
 
 @dataclass
@@ -127,4 +127,3 @@ class EnumTypeData:
         if not (parsed := json.loads(data)):
             return None
         return cls(dpcode, **parsed)
-

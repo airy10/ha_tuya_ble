@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 import pycountry
 from typing import Any
 
@@ -104,6 +105,7 @@ def _show_login_form(
     user_input: dict[str, Any],
     errors: dict[str, str],
     placeholders: dict[str, Any],
+    def_country_name: str | None = None,
 ) -> FlowResult:
     """Shows the Tuya IOT platform login form."""
     if user_input is not None and user_input.get(CONF_COUNTRY_CODE) is not None:
@@ -111,14 +113,6 @@ def _show_login_form(
             if country.country_code == user_input[CONF_COUNTRY_CODE]:
                 user_input[CONF_COUNTRY_CODE] = country.name
                 break
-
-    def_country_name: str | None = None
-    try:
-        def_country = pycountry.countries.get(alpha_2=flow.hass.config.country)
-        if def_country:
-            def_country_name = def_country.name
-    except:
-        pass
 
     return flow.async_show_form(
         step_id="login",
@@ -149,6 +143,17 @@ def _show_login_form(
         errors=errors,
         description_placeholders=placeholders,
     )
+
+
+async def _async_get_default_country_name(hass) -> str | None:
+    """Resolve the system country name without blocking the event loop."""
+    if not hass.config.country:
+        return None
+
+    def_country = await hass.async_add_executor_job(
+        partial(pycountry.countries.get, alpha_2=hass.config.country)
+    )
+    return def_country.name if def_country else None
 
 
 class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
@@ -201,7 +206,17 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
             user_input = {}
             user_input.update(self.config_entry.options)
 
-        return _show_login_form(self, user_input, errors, placeholders)
+        def_country_name = None
+        if not user_input.get(CONF_COUNTRY_CODE):
+            def_country_name = await _async_get_default_country_name(self.hass)
+
+        return _show_login_form(
+            self,
+            user_input,
+            errors,
+            placeholders,
+            def_country_name,
+        )
 
 
 class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -277,7 +292,17 @@ class TuyaBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             if self._data is not None and len(self._data) > 0:
                 user_input.update(self._data)
 
-        return _show_login_form(self, user_input, errors, placeholders)
+        def_country_name = None
+        if not user_input.get(CONF_COUNTRY_CODE):
+            def_country_name = await _async_get_default_country_name(self.hass)
+
+        return _show_login_form(
+            self,
+            user_input,
+            errors,
+            placeholders,
+            def_country_name,
+        )
 
     async def async_step_device(
         self, user_input: dict[str, Any] | None = None
