@@ -496,15 +496,17 @@ def update_mapping(category_description: tuple[TuyaLightEntityDescription], mapp
 
     return m
 
-def get_mapping_by_device(device: TuyaBLEDevice) -> tuple[TuyaLightEntityDescription]:
+def get_mapping_by_device(device: TuyaBLEDevice) -> tuple[TuyaLightEntityDescription, ...]:
     category_mapping = LIGHTS.get(device.category)
+    if category_mapping is None:
+        return ()
 
     category = ProductsMapping.get(device.category)
     if category is not None:
         product_mapping_overrides = category.get(device.product_id)
         if product_mapping_overrides is not None:
-             return update_mapping(category_mapping, product_mapping_overrides)
-             
+            return update_mapping(category_mapping, product_mapping_overrides)
+
     return category_mapping
 
 
