@@ -230,6 +230,28 @@
       "program": {
         "name": "Program: position[/time];..."
       }
+    },
+    "event": {
+      "unlocked": {
+        "name": "Unlocked by",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fingerprint": "Fingerprint",
+              "password": "Password",
+              "dynamic_password": "Dynamic password",
+              "temporary_password": "Temporary password",
+              "card": "Card",
+              "face": "Face",
+              "key": "Key",
+              "bluetooth": "Bluetooth",
+              "remote": "Remote",
+              "voice": "Voice",
+              "offline_password": "Offline password"
+            }
+          }
+        }
+      }
     }
   },
   "options": {

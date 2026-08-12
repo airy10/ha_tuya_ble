@@ -11,10 +11,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
+from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDataPointType, TuyaBLEDevice
 
 from .const import DOMAIN
 from .devices import TuyaBLECoordinator, TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
+from .lock_capabilities import TuyaBLELockCapabilities
 
 import logging
 
@@ -83,6 +84,7 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         device: TuyaBLEDevice,
         product: TuyaBLEProductInfo,
         mapping: TuyaBLELockMapping,
+        capabilities: TuyaBLELockCapabilities | None = None,
     ) -> None:
         """Initialize the lock."""
         description = mapping.description or LockEntityDescription(
@@ -93,6 +95,9 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         self._mapping = mapping
         # Locked state requested by the user, cleared once the device confirms it.
         self._requested_locked: bool | None = None
+        self._unlock_dps = dict(capabilities.unlock_records) if capabilities else {}
+        # Datapoints whose replayed value has been discarded on this connection.
+        self._seen_unlock_dps: set[int] = set()
 
     def _logical_value(self, dp_id: int) -> bool | None:
         """Return a datapoint as a locked state, None if never reported."""
@@ -110,6 +115,42 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         # it already holds the requested value, so a mapping configured this way
         # reports the new state immediately instead of a transitional one.
         return self._logical_value(self._mapping.lock_dp_id)
+
+    async def async_added_to_hass(self) -> None:
+        """Start tracking who last operated the lock."""
+        await super().async_added_to_hass()
+        if self._unlock_dps:
+            self.async_on_remove(
+                self._device.register_callback(self._handle_unlock_record)
+            )
+            self.async_on_remove(
+                self._device.register_disconnected_callback(self._handle_disconnect)
+            )
+
+    @callback
+    def _handle_disconnect(self) -> None:
+        """Expect the replayed status again once the lock comes back."""
+        self._seen_unlock_dps.clear()
+
+    @callback
+    def _handle_unlock_record(self, datapoints: list[TuyaBLEDataPoint]) -> None:
+        """Record who opened the lock, for LockEntity.changed_by.
+
+        The first report of each datapoint on a connection is dropped, exactly
+        as the event entity drops it: the lock answers a status query with the
+        last value of every datapoint, and that value is not merely stale. It
+        can name a credential that no longer exists on the lock, which is worse
+        than reporting nothing until someone actually opens the door.
+        """
+        for datapoint in datapoints:
+            method = self._unlock_dps.get(datapoint.id)
+            if method is None:
+                continue
+            if datapoint.id not in self._seen_unlock_dps:
+                self._seen_unlock_dps.add(datapoint.id)
+                continue
+            self._attr_changed_by = f"{method} #{datapoint.value}"
+            self.async_write_ha_state()
 
     @property
     def is_locked(self) -> bool | None:
@@ -192,6 +233,7 @@ async def async_setup_entry(
                 data.device,
                 data.product,
                 mapping,
+                data.lock_capabilities,
             )
         )
 
