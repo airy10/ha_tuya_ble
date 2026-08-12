@@ -2,20 +2,36 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Awaitable
+
+import voluptuous as vol
 
 from homeassistant.components.lock import (
     LockEntity,
     LockEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import CONF_NAME
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceResponse,
+    SupportsResponse,
+    callback,
+)
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDataPointType, TuyaBLEDevice
 
+from . import lock_credential_store as credential_store
 from .const import DOMAIN
 from .devices import TuyaBLECoordinator, TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .lock_capabilities import TuyaBLELockCapabilities
+from .lock_credential_manager import (
+    TuyaBLELockCredentials,
+    TuyaBLELockCredentialsError,
+)
 
 import logging
 
@@ -85,6 +101,8 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         product: TuyaBLEProductInfo,
         mapping: TuyaBLELockMapping,
         capabilities: TuyaBLELockCapabilities | None = None,
+        entry: ConfigEntry | None = None,
+        credentials: TuyaBLELockCredentials | None = None,
     ) -> None:
         """Initialize the lock."""
         description = mapping.description or LockEntityDescription(
@@ -95,6 +113,9 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         self._mapping = mapping
         # Locked state requested by the user, cleared once the device confirms it.
         self._requested_locked: bool | None = None
+        self._entry = entry
+        # Shared with the options flow, which has no entity to hang them on.
+        self._credentials = credentials
         self._unlock_dps = dict(capabilities.unlock_records) if capabilities else {}
         # Datapoints whose replayed value has been discarded on this connection.
         self._seen_unlock_dps: set[int] = set()
@@ -149,8 +170,61 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
             if datapoint.id not in self._seen_unlock_dps:
                 self._seen_unlock_dps.add(datapoint.id)
                 continue
-            self._attr_changed_by = f"{method} #{datapoint.value}"
+            name = None
+            if self._entry is not None:
+                name = credential_store.describe(self._entry, datapoint.value)[
+                    CONF_NAME
+                ]
+            self._attr_changed_by = name or f"{method} #{datapoint.value}"
             self.async_write_ha_state()
+
+    def _require_credentials(self) -> TuyaBLELockCredentials:
+        """Return the credential manager, or explain that there is none."""
+        if self._credentials is None or not self._credentials.supported:
+            raise HomeAssistantError(
+                f"{self.entity_id} does not expose the access control datapoints"
+            )
+        return self._credentials
+
+    async def async_service_get_credentials(self) -> ServiceResponse:
+        """Return the fingerprints the lock holds."""
+        credentials = await self._run(self._require_credentials().async_list())
+        _LOGGER.debug(
+            "%s: holds %s fingerprint(s): %s",
+            self._device.address,
+            len(credentials),
+            credentials,
+        )
+        return {
+            "credentials": [
+                {
+                    "credential_id": credential.hardware_id,
+                    "credential_type": credential.type.name.lower(),
+                    "is_admin": credential.is_admin,
+                    "enabled": credential.valid,
+                }
+                for credential in credentials
+            ]
+        }
+
+    async def async_service_set_credential(self) -> ServiceResponse:
+        """Enrol a fingerprint and report the id the lock gave it."""
+        credential_id = await self._run(
+            self._require_credentials().async_add_fingerprint()
+        )
+        return {"credential_id": credential_id}
+
+    async def async_service_clear_credential(self, credential_id: int) -> None:
+        """Remove one credential from the lock."""
+        await self._run(self._require_credentials().async_remove(credential_id))
+
+    @staticmethod
+    async def _run[T](awaitable: Awaitable[T]) -> T:
+        """Present a credential failure as something Home Assistant can show."""
+        try:
+            return await awaitable
+        except TuyaBLELockCredentialsError as err:
+            raise HomeAssistantError(str(err)) from err
 
     @property
     def is_locked(self) -> bool | None:
@@ -224,6 +298,31 @@ async def async_setup_entry(
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     mappings = get_mapping_by_device(data.device)
 
+    # Named after the Matter lock actions, the closest thing to a convention
+    # here, so that a generic API in core would be a rename not a rewrite.
+    platform = entity_platform.async_get_current_platform()
+    # Optional rather than Matter's response-only, so callers that cannot ask
+    # for a response can still trigger the read.
+    platform.async_register_entity_service(
+        "get_lock_credentials",
+        None,
+        "async_service_get_credentials",
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    platform.async_register_entity_service(
+        "set_lock_credential",
+        None,
+        "async_service_set_credential",
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    # No default for the id: removing a credential is not something to reach
+    # by accident.
+    platform.async_register_entity_service(
+        "clear_lock_credential",
+        {vol.Required("credential_id"): vol.All(int, vol.Range(min=0, max=0xFFFE))},
+        "async_service_clear_credential",
+    )
+
     entities: list[TuyaBLELock] = []
     for mapping in mappings:
         entities.append(
@@ -234,6 +333,8 @@ async def async_setup_entry(
                 data.product,
                 mapping,
                 data.lock_capabilities,
+                entry,
+                data.lock_credentials,
             )
         )
 

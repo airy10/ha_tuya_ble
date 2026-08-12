@@ -12,18 +12,21 @@ from typing import Any
 
 from homeassistant.components.event import EventEntity, EventEntityDescription
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDevice
 
-from .const import DOMAIN
+from .const import CONF_PERSON, CONF_USER_ID, DOMAIN
+from . import lock_credential_store as credential_store
 from .devices import TuyaBLECoordinator, TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .lock_capabilities import TuyaBLELockCapabilities
 
 _LOGGER = logging.getLogger(__name__)
 
 ATTR_CREDENTIAL_ID = "credential_id"
+ATTR_CREDENTIAL_NAME = "credential_name"
 
 
 class TuyaBLELockUnlockEvent(TuyaBLEEntity, EventEntity):
@@ -96,8 +99,14 @@ class TuyaBLELockUnlockEvent(TuyaBLEEntity, EventEntity):
             self.async_write_ha_state()
 
     def _describe(self, credential_id: int) -> dict[str, Any]:
-        """Describe the credential the lock named, which is only a number."""
-        return {ATTR_CREDENTIAL_ID: credential_id}
+        """Attach whatever Home Assistant knows about this credential."""
+        known = credential_store.describe(self._entry, credential_id)
+        return {
+            ATTR_CREDENTIAL_ID: credential_id,
+            ATTR_CREDENTIAL_NAME: known[CONF_NAME],
+            CONF_PERSON: known[CONF_PERSON],
+            CONF_USER_ID: known[CONF_USER_ID],
+        }
 
 
 async def async_setup_entry(
@@ -109,9 +118,8 @@ async def async_setup_entry(
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     capabilities = data.lock_capabilities
 
-    # Deliberately not tied to the lock platform's mapping. A lock that reports
-    # how it was opened but cannot be operated from Home Assistant - several of
-    # them have no controllable datapoint at all - still deserves this entity.
+    # Not tied to the lock platform's mapping: several products in this schema
+    # report how they were opened but expose nothing to control.
     if capabilities is None or not capabilities.reports_unlocks:
         return
 

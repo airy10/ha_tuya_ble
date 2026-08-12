@@ -628,4 +628,9 @@ class DPCode(StrEnum):
     WORK_MODE = "work_mode"  # Working mode
     WORK_POWER = "work_power"
 
-
+# Names and people for the credentials the lock holds, keyed by the id the
+# lock itself uses. Stored in entry.data rather than entry.options: the Tuya
+# login flow replaces options wholesale, which would wipe them.
+CONF_CREDENTIALS: Final = "credentials"
+CONF_PERSON: Final = "person"
+CONF_USER_ID: Final = "user_id"

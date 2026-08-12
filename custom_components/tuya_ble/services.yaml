@@ -1,0 +1,26 @@
+get_lock_credentials:
+  target:
+    entity:
+      domain: lock
+      integration: tuya_ble
+
+set_lock_credential:
+  target:
+    entity:
+      domain: lock
+      integration: tuya_ble
+
+clear_lock_credential:
+  target:
+    entity:
+      domain: lock
+      integration: tuya_ble
+  fields:
+    credential_id:
+      required: true
+      example: 4
+      selector:
+        number:
+          min: 0
+          max: 65534
+          mode: box

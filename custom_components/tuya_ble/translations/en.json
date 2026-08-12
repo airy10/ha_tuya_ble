@@ -261,6 +261,33 @@
             "login_error": "Login error ({code}): {msg}"
         },
         "step": {
+            "init": {
+                "title": "Tuya BLE",
+                "menu_options": {
+                    "credentials": "Manage fingerprints",
+                    "login": "Tuya cloud login"
+                }
+            },
+            "credentials": {
+                "title": "Fingerprints",
+                "description": "The lock holds {count} fingerprint(s). Pick one to rename, assign a person or remove it, or add a new one.",
+                "data": {
+                    "credential": "Fingerprint"
+                }
+            },
+            "edit": {
+                "title": "Fingerprint #{credential_id}",
+                "description": "The lock only stores a number. The name and person live in Home Assistant.",
+                "data": {
+                    "name": "Name",
+                    "person": "Person",
+                    "delete": "Remove this fingerprint from the lock"
+                },
+                "data_description": {
+                    "person": "Optional. Lets automations tell who opened the lock.",
+                    "delete": "Deletes it on the lock itself. This cannot be undone from here."
+                }
+            },
             "login": {
                 "data": {
                     "access_id": "Tuya IoT Access ID",
@@ -270,6 +297,34 @@
                     "username": "Account"
                 },
                 "description": "Refer to documentation of Tuya integration to retrive the cloud credentials https://www.home-assistant.io/integrations/tuya/\n\nEnter your Tuya credentials."
+            }
+        },
+        "progress": {
+            "enroll": "Present the same finger to the reader, several times, until the lock confirms."
+        },
+        "abort": {
+            "lock_unavailable": "The lock is not connected, so its fingerprints cannot be managed right now.",
+            "enroll_failed": "The lock did not enroll the fingerprint: {error}",
+            "remove_failed": "The lock did not remove the fingerprint: {error}"
+        }
+    },
+    "services": {
+        "get_lock_credentials": {
+            "name": "Get lock credentials",
+            "description": "Ask the lock which fingerprints it holds."
+        },
+        "set_lock_credential": {
+            "name": "Set lock credential",
+            "description": "Enroll a fingerprint on the lock. The lock asks for several touches and this waits until it is done."
+        },
+        "clear_lock_credential": {
+            "name": "Clear lock credential",
+            "description": "Remove a single fingerprint from the lock.",
+            "fields": {
+                "credential_id": {
+                    "name": "Credential ID",
+                    "description": "Identifier the lock reports for the fingerprint, the same number the last used fingerprint sensor shows."
+                }
             }
         }
     }

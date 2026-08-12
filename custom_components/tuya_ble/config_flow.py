@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from functools import partial
 import pycountry
@@ -23,10 +24,12 @@ from homeassistant.const import (
     CONF_ADDRESS, 
     CONF_DEVICE_ID,
     CONF_COUNTRY_CODE,
+    CONF_NAME,
     CONF_PASSWORD,
     CONF_USERNAME,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.data_entry_flow import FlowHandler, FlowResult
 
 from .tuya_ble import SERVICE_UUID, TuyaBLEDeviceCredentials
@@ -43,10 +46,22 @@ from .const import (
     CONF_APP_TYPE,
     CONF_AUTH_TYPE,
     CONF_ENDPOINT,
+    CONF_PERSON,
     DOMAIN,
 )
+from . import lock_credential_store as credential_store
+from .lock_credential_manager import (
+    TuyaBLELockCredentials,
+    TuyaBLELockCredentialsError,
+)
+
 from .devices import TuyaBLEData, get_device_readable_name
 from .cloud import HASSTuyaBLEDeviceManager
+
+# Picking this in the credential list starts an enrollment instead of editing.
+CHOICE_ADD = "add"
+CONF_CREDENTIAL = "credential"
+CONF_DELETE = "delete"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -162,12 +177,183 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
         super().__init__(config_entry)
+        # The enrollment in flight, and the credential the fingerprint screens
+        # are working on.
+        self._task: asyncio.Task[int] | None = None
+        self._selected: int | None = None
+
+    def _credentials(self) -> TuyaBLELockCredentials | None:
+        """Return the credential manager, when the lock has one."""
+        data: TuyaBLEData | None = self.hass.data.get(DOMAIN, {}).get(
+            self.config_entry.entry_id
+        )
+        if data is None or data.lock_credentials is None:
+            return None
+        return data.lock_credentials if data.lock_credentials.supported else None
+
+    @callback
+    def async_remove(self) -> None:
+        """Tell the lock to stop when the wizard is abandoned.
+
+        Home Assistant cancels the progress task itself just before calling
+        this, which frees the credential manager's slot, but it cannot reach
+        the lock: the reader would keep waiting for a finger until its own
+        timeout. This is a callback, so the cancellation is left to the loop.
+        """
+        task, self._task = self._task, None
+        if task is None:
+            return
+        manager = self._credentials()
+        _LOGGER.debug(
+            "Fingerprint wizard abandoned, telling the lock to stop (manager=%s)",
+            manager is not None,
+        )
+        if manager is not None:
+            self.hass.async_create_task(manager.async_cancel_enrollment())
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the options."""
-        return await self.async_step_login(user_input)
+        """Offer the Tuya login and, for locks, fingerprint management."""
+        if self._credentials() is None:
+            return await self.async_step_login(user_input)
+        return self.async_show_menu(
+            step_id="init", menu_options=["credentials", "login"]
+        )
+
+    async def async_step_credentials(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """List what the lock holds and let one of them be picked.
+
+        The lock is the source of truth for which credentials exist; Home
+        Assistant only adds the labels, so a fingerprint enrolled from the Tuya
+        app can be named here without re-enrolling it.
+        """
+        manager = self._credentials()
+        if manager is None:
+            return self.async_abort(reason="lock_unavailable")
+
+        if user_input is not None:
+            choice = user_input[CONF_CREDENTIAL]
+            if choice == CHOICE_ADD:
+                return await self.async_step_enroll()
+            self._selected = int(choice)
+            return await self.async_step_edit()
+
+        try:
+            held = await manager.async_list()
+        except TuyaBLELockCredentialsError as err:
+            _LOGGER.warning("Could not read the lock's fingerprints: %s", err)
+            return self.async_abort(reason="lock_unavailable")
+
+        known = credential_store.get_all(self.config_entry)
+        # Credentials first and enrolment last: the frontend preselects the
+        # first option, and that should not start an enrolment.
+        options: dict[str, str] = {}
+        for credential in held:
+            described = known.get(str(credential.hardware_id), {})
+            label = described.get(CONF_NAME) or "unnamed"
+            options[str(credential.hardware_id)] = (
+                f"#{credential.hardware_id} - {label}"
+                + (" (admin)" if credential.is_admin else "")
+            )
+        options[CHOICE_ADD] = "Add a new fingerprint"
+
+        return self.async_show_form(
+            step_id="credentials",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_CREDENTIAL): vol.In(options)}
+            ),
+            description_placeholders={"count": str(len(held))},
+        )
+
+    async def async_step_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Rename a credential, link a person to it, or take it off the lock."""
+        manager = self._credentials()
+        if manager is None or self._selected is None:
+            return self.async_abort(reason="lock_unavailable")
+
+        if user_input is not None:
+            if user_input.get(CONF_DELETE):
+                try:
+                    await manager.async_remove(self._selected)
+                except TuyaBLELockCredentialsError as err:
+                    return self.async_abort(
+                        reason="remove_failed",
+                        description_placeholders={"error": str(err)},
+                    )
+                credential_store.async_remove(
+                    self.hass, self.config_entry, self._selected
+                )
+            else:
+                credential_store.async_set(
+                    self.hass,
+                    self.config_entry,
+                    self._selected,
+                    name=user_input[CONF_NAME],
+                    person=user_input.get(CONF_PERSON),
+                )
+            return await self.async_step_credentials()
+
+        known = credential_store.get(self.config_entry, self._selected)
+        schema: dict[Any, Any] = {
+            vol.Required(CONF_NAME, default=known.get(CONF_NAME) or ""): (
+                selector.TextSelector()
+            ),
+            # Optional on purpose: a guest or a cleaner may have no Home
+            # Assistant account at all, and a name is enough.
+            vol.Optional(
+                CONF_PERSON,
+                description={"suggested_value": known.get(CONF_PERSON)},
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="person")
+            ),
+            vol.Optional(CONF_DELETE, default=False): selector.BooleanSelector(),
+        }
+        return self.async_show_form(
+            step_id="edit",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"credential_id": str(self._selected)},
+        )
+
+    async def async_step_enroll(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Wait for the lock while the finger is presented."""
+        manager = self._credentials()
+        if manager is None:
+            return self.async_abort(reason="lock_unavailable")
+
+        if self._task is None:
+            self._task = self.hass.async_create_task(manager.async_add_fingerprint())
+
+        if not self._task.done():
+            return self.async_show_progress(
+                step_id="enroll",
+                progress_action="enroll",
+                progress_task=self._task,
+            )
+
+        return self.async_show_progress_done(next_step_id="enrolled")
+
+    async def async_step_enrolled(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Take the id the lock assigned and go straight to naming it."""
+        task, self._task = self._task, None
+        if task is None:
+            return self.async_abort(reason="lock_unavailable")
+        try:
+            self._selected = task.result()
+        except TuyaBLELockCredentialsError as err:
+            _LOGGER.warning("Enrolling a fingerprint failed: %s", err)
+            return self.async_abort(
+                reason="enroll_failed", description_placeholders={"error": str(err)}
+            )
+        return await self.async_step_edit()
 
     async def async_step_login(
         self, user_input: dict[str, Any] | None = None
