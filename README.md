@@ -1,6 +1,6 @@
 # Home Assistant support for Tuya BLE devices
 
-## NOTE: functionalities from this project have integrated to my hass-localtuya fork (https://github.com/airy10/hass-localtuya) - this let control both your Wifi and BLE Tuya devices using a single component - SmartLife integration (via QR-Code auth) has also been added - so no need anymore for a Tuya dev account - still very experimental
+## NOTE: functionalities from this project have been integrated to my hass-localtuya fork (https://github.com/airy10/hass-localtuya) - this let HA control both your Wifi and BLE Tuya devices using a single component - SmartLife integration (via QR-Code auth) has also been added - so no need anymore for a Tuya dev account - still very experimental
 
 ## Overview
 
