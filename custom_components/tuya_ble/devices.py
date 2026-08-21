@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     # Only for the annotations on TuyaBLEData: importing these for real would
     # have this module depend on the lock support it merely carries.
     from .lock_capabilities import TuyaBLELockCapabilities
+    from .lock_credential_manager import TuyaBLELockCredentials
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -311,9 +312,11 @@ class TuyaBLEData:
     product: TuyaBLEProductInfo
     manager: HASSTuyaBLEDeviceManager
     coordinator: TuyaBLECoordinator
-    # Access control datapoints this device turned out to have. Discovered
-    # before the platforms are set up, because more than one of them needs it.
+    # Access control datapoints this device turned out to have, and the
+    # transaction manager built from them. Set up before the platforms so the
+    # options flow can manage credentials on locks that have no lock entity.
     lock_capabilities: TuyaBLELockCapabilities | None = None
+    lock_credentials: TuyaBLELockCredentials | None = None
 
 
 @dataclass

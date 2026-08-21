@@ -18,6 +18,7 @@ from .cloud import HASSTuyaBLEDeviceManager
 from . import lock_capabilities
 from .const import DOMAIN
 from .devices import TuyaBLECoordinator, TuyaBLEData, get_device_product_info
+from .lock_credential_manager import TuyaBLELockCredentials
 
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
@@ -103,9 +104,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator,
     )
     # Not in the lock platform: some products in this schema report unlocks
-    # without exposing anything to control, so they get no lock entity, and the
-    # event platform still needs the answer.
-    data.lock_capabilities = lock_capabilities.discover(device)
+    # without exposing anything to control, so they get no lock entity, while
+    # the event platform and the options flow both still need the answer.
+    capabilities = lock_capabilities.discover(device)
+    data.lock_capabilities = capabilities
+
+    if capabilities.manages_credentials:
+        credentials = TuyaBLELockCredentials(
+            device,
+            add_dp_id=capabilities.credential_add_dp_id,
+            delete_dp_id=capabilities.credential_delete_dp_id,
+            sync_dp_id=capabilities.credential_sync_dp_id,
+        )
+        data.lock_credentials = credentials
+        entry.async_on_unload(credentials.start())
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = data
 
