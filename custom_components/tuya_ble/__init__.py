@@ -15,12 +15,14 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from .tuya_ble import TuyaBLEDevice
 
 from .cloud import HASSTuyaBLEDeviceManager
+from . import lock_capabilities
 from .const import DOMAIN
 from .devices import TuyaBLECoordinator, TuyaBLEData, get_device_product_info
 
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.CLIMATE,
+    Platform.EVENT,
     Platform.LOCK,
     Platform.NUMBER,
     Platform.SENSOR,
@@ -47,6 +49,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manager = HASSTuyaBLEDeviceManager(hass, entry.options.copy())
     device = TuyaBLEDevice(manager, ble_device)
     await device.initialize()
+
+    # Code, id and type only: the credentials object carries the local key.
+    _LOGGER.debug(
+        "%s: category=%s product=%s functions=%s status=%s",
+        address,
+        device.category,
+        device.product_id,
+        sorted((f.dp_id, code, str(f.type)) for code, f in device.function.items()),
+        sorted(
+            (f.dp_id, code, str(f.type)) for code, f in device.status_range.items()
+        ),
+    )
+
     product_info = get_device_product_info(device)
 
     coordinator = TuyaBLECoordinator(hass, device)
@@ -80,13 +95,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = TuyaBLEData(
+    data = TuyaBLEData(
         entry.title,
         device,
         product_info,
         manager,
         coordinator,
     )
+    # Not in the lock platform: some products in this schema report unlocks
+    # without exposing anything to control, so they get no lock entity, and the
+    # event platform still needs the answer.
+    data.lock_capabilities = lock_capabilities.discover(device)
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = data
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

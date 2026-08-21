@@ -1,7 +1,7 @@
 """The Tuya BLE integration."""
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import logging
 from homeassistant.const import CONF_ADDRESS, CONF_DEVICE_ID
@@ -38,6 +38,11 @@ from .const import (
 
 from .base import IntegerTypeData, EnumTypeData
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
+
+if TYPE_CHECKING:
+    # Only for the annotations on TuyaBLEData: importing these for real would
+    # have this module depend on the lock support it merely carries.
+    from .lock_capabilities import TuyaBLELockCapabilities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -306,6 +311,9 @@ class TuyaBLEData:
     product: TuyaBLEProductInfo
     manager: HASSTuyaBLEDeviceManager
     coordinator: TuyaBLECoordinator
+    # Access control datapoints this device turned out to have. Discovered
+    # before the platforms are set up, because more than one of them needs it.
+    lock_capabilities: TuyaBLELockCapabilities | None = None
 
 
 @dataclass
